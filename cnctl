@@ -1,0 +1,66 @@
+#!/usr/bin/python
+import os
+import sys
+from getopt import getopt
+from comnctl import task, taskList, agentList
+
+def usage():
+    # Print all of the options
+    print "%s [agent].task" % os.path.basename(sys.argv[0])
+    print "Agents:"
+    for a in agentList:
+        print str(a)
+    print ""
+    print "Tasks:"
+    for t in taskList:
+        print str(t)
+
+def call(taskName, agentName):
+    taskList[taskName](agentList[agentName])
+
+if __name__ == "__main__":
+    ## Look for arguments
+    if os.path.isdir('cnctl'):
+        # How do I import the directory?
+        sys.path.append('.')
+        from cnctl import *
+    elif os.path.isfile('cnctl.py'):
+        # How do I import the file
+        sys.path.append('.')
+        from cnctl import *
+    else:
+        print "You must run this in a directory with a cnctl file"
+        sys.exit(-1)
+
+    if len(sys.argv) == 1:
+        usage()
+        sys.exit(0)
+
+    ## Parse the input
+    (opts, args) = getopt(sys.argv[1:], "h", ['help', 'dryrun'])
+    for o, a in opts:
+        if o in ['-h', '--help']:
+            usage()
+            sys.exit(0)
+        elif o in ['--dryrun']:
+            # Set dryrun
+            pass
+
+    ## Execute the corresponding code
+    for a in args:
+        try:
+            agent, task = a.split('.',1)
+        except ValueError:
+            agent = ""
+            task = a
+        if task in taskList.names:
+            if len(agent):
+                if agent in agentList.names:
+                    call(task, agent)
+                else:
+                    print "cnctl Error: Unknown agent %s" % str(agent)
+            else:
+                for a in agentList:
+                    if a.__type__() == "Agent":
+                        taskList.call(task, a)
+
