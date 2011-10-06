@@ -37,10 +37,9 @@ class Agent(object):
         global agentList
         self._name = name
         self._desc = desc
-        self._cmds = []
-        self._buffered = []
-        self.executed = False
         agentList.add(self)
+
+        self.reset()
 
     def __call__(self, t):
         t(self)
@@ -50,6 +49,12 @@ class Agent(object):
 
     def __str__(self):
         return "%16s:\t%s" % (self._name, self._desc)
+
+    def reset(self):
+        """Reset the state"""
+        self._cmds = []
+        self._buffered = []
+        self.executed = False
 
     def out(self, data):
         if self.executed:

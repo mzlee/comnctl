@@ -57,10 +57,12 @@ if __name__ == "__main__":
             if len(agent):
                 if agent in agentList.names:
                     call(task, agent)
+                    agent.reset()
                 else:
                     print "cnctl Error: Unknown agent %s" % str(agent)
             else:
                 for a in agentList:
                     if a.__type__() == "Agent":
                         taskList.call(task, a)
+                        a.reset()
 
