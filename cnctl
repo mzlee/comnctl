@@ -91,6 +91,10 @@ if __name__ == "__main__":
                 conn.stdin.flush()
                 for line in conn.stdout.readlines():
                     agent.out(line.rstrip())
+                err = ""
                 for line in conn.stderr.readline():
-                    agent.err(line.rstrip())
+                    if line == '\n':
+                        agent.err(err)
+                    else:
+                        err += line
             agent.connection = None
