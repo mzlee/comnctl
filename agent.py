@@ -2,7 +2,7 @@
 import sys
 from subprocess import Popen, PIPE
 
-from error import DuplicateAgent
+from error import DuplicateAgent, NoMethod
 
 class AgentList(dict):
     """The global list of agents"""
@@ -25,7 +25,7 @@ class AgentList(dict):
 
 agentList = AgentList()
 
-class Agent(object):
+class BaseAgent(object):
     """An agent for doing some task"""
     _name = ""
     _desc = ""
@@ -38,7 +38,7 @@ class Agent(object):
         self._name = name
         self._desc = desc
         agentList.add(self)
-
+        self.connection = None
         self.reset()
 
     def __call__(self, t):
@@ -57,67 +57,52 @@ class Agent(object):
         self.executed = False
 
     def out(self, data):
-        if self.executed:
-            sys.stdout.write('<<< %s\n' % data)
-        else:
-            self._buffered.append('<<< %s\n' % data)
+        sys.stdout.write("%-8s <<< %s\n" % (self.name, data))
 
     def err(self, data):
-        if self.executed:
-            sys.stdout.write('!!! %s\n' % data)
-        else:
-            self._buffered.append('!!! %s\n' % data)
+        sys.stdout.write("%-8s !!! %s\n" % (self.name, data))
 
     def shell(self, command):
-        self._cmds.append("echo '>>>' %s" % command)
-        self._cmds.append(command)
-        self._cmds.append("echo --- $?")
-
-        self._buffered.append('cmd %s' % command)
+        if not self.connection:
+            connection = self.connect()
+            if type(connection) != list:
+                self.connection = [connection]
+            else:
+                self.connection = connection
+        self.out(command)
+        for conn in self.connection:
+            conn.stdin.write(command)
+            conn.stdin.write('\n')
 
     def connect(self):
-        class DummyAgent(object):
-            def communicate(self, commands):
-                out = '\n'.join(commands.split('\n')[1::3])
-                err = ""
-                return out, err
-
-        return DummyAgent()
+        raise NoMethod("BaseAgent does not define connect")
 
     def execute(self):
-        self.executed = True
-        connection = self.connect()
-        out, err = connection.communicate("\n".join(self._cmds))
-        if err:
-            for line in err.split('\n'):
-                self.err(line)
-        lines = out.split('\n')
-        for line in self._buffered:
-            if line.startswith('cmd'):
-                while len(lines) and not lines[0].startswith('---'):
-                    print lines.pop(0)
-                print lines.pop(0)
-            else:
-                print line
+        pass
 
-class RemoteAgent(Agent):
+class RemoteAgent(BaseAgent):
     """A remote agent for doing some task over ssh"""
     def __init__(self, name, user, host, port=22, desc=""):
-        Agent.__init__(self, name, desc)
+        BaseAgent.__init__(self, name, desc)
         self._host = host
         self._port = str(port)
         self._user = user
 
     def connect(self):
-        return Popen(["ssh", self._host, "-p", self._port, "-l", self._user],
+        conn = Popen(["ssh", self._host, "-p", self._port, "-l", self._user],
                      stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True)
+        conn.name = self._name
+        return conn
 
-class LocalAgent(Agent):
+
+class LocalAgent(BaseAgent):
     """A local agent for doing some task locally"""
     def connect(self):
-        return Popen(["/bin/sh"], stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True)
+        conn = Popen(["/bin/sh"], stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True)
+        conn.name = self._name
+        return conn
 
-class Agents(Agent):
+class Agents(BaseAgent):
     """A group of agents"""
     _list = []
     _dict = {}
@@ -131,19 +116,18 @@ class Agents(Agent):
         if a._name in self._list:
             del self._dict[a._name]
             self._list.remove(a._name)
-            
-    def run(self, command):
-        for name in self._list:
-            self._dict[name].run(command)
+    
+    def connect(self):
+        conn = [a.connect() for a in self._dict.values()]
+        return conn
 
     def __type__(self):
         return "Agents"
 
 local = LocalAgent('local', "the localhost")
 
-def remote(name, user, host, desc=""):
-    r = RemoteAgent(name, user, host, desc=desc)
-    return r
+def remote(name, user, host, port=22, desc=""):
+    return RemoteAgent(name, user, host, port=port, desc=desc)
 
 def group(name, agents=[local]):
     g = Agents(name)

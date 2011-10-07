@@ -40,14 +40,11 @@ class Task(object):
         taskList.add(self)
         self._depends = depends
 
-    def __call__(self, a, last=True):
-        for d in self._depends:
-            if d in taskList.names:
-                taskList[d](a, False)
+    def __call__(self, a):
         print "Calling the task %s.%s" % (a._name, self._name)
         self._func(a)
-        if last:
-            a.execute()
+        a.execute()
+        a.reset()
 
     def __str__(self):
         return "%16s:\t%s" % (self._name, self._doc)

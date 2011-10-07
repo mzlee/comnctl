@@ -15,8 +15,8 @@ def usage():
     for t in taskList:
         print str(t)
 
-def call(taskName, agentName):
-    taskList[taskName](agentList[agentName])
+def call(taskName, agent):
+    taskList[taskName](agent)
 
 if __name__ == "__main__":
     ## Look for arguments
@@ -46,7 +46,9 @@ if __name__ == "__main__":
             # Set dryrun
             pass
 
-    ## Execute the corresponding code
+    ## Create the dependency list
+    tasks = {}
+    taskOrder = []
     for a in args:
         try:
             agent, task = a.split('.',1)
@@ -54,15 +56,41 @@ if __name__ == "__main__":
             agent = ""
             task = a
         if task in taskList.names:
-            if len(agent):
+            expanded = taskList[task]._depends
+            expanded.append(task)
+            for task in expanded:
+                if task not in taskOrder:
+                    taskOrder.append(task)
+                    tasks[task] = []
+                else:
+                    continue
+
                 if agent in agentList.names:
-                    call(task, agent)
-                    agent.reset()
+                    if agentList[agent] not in tasks[task]:
+                        tasks[task].append(agentList[agent])
+                elif len(agent) == 0:
+                    for a in agentList:
+                        if a.__type__() == "Agent":
+                            if a not in tasks[task]:
+                                tasks[task].append(a)
                 else:
                     print "cnctl Error: Unknown agent %s" % str(agent)
-            else:
-                for a in agentList:
-                    if a.__type__() == "Agent":
-                        taskList.call(task, a)
-                        a.reset()
+                    usage()
+                    sys.exit(-1)
+        else:
+            print "cnctl Error: Unknown task: %s" % task
+            usage()
+            sys.exit(-1)
 
+    for task in taskOrder:
+        for agent in tasks[task]:
+            call(task, agent)
+        for agent in tasks[task]:
+            for conn in agent.connection:
+                conn.stdin.write('exit\n\0');
+                conn.stdin.flush()
+                for line in conn.stdout.readlines():
+                    agent.out(line.rstrip())
+                for line in conn.stderr.readline():
+                    agent.err(line.rstrip())
+            agent.connection = None
