@@ -32,29 +32,33 @@ taskList = TaskList()
 
 class Task(object):
     """A command and control task"""
-    def __init__(self, func, depends=[]):
+    def __init__(self, func, depends=[], limit=[]):
         global taskList
+        self._verbose = False
         self._func = func
         self._name = func.__name__
         self._doc = func.__doc__
         taskList.add(self)
         self._depends = depends
+        self._limit = limit
 
     def __call__(self, a):
-        print "Calling the task %s.%s" % (a._name, self._name)
-        self._func(a)
-        a.execute()
-        a.reset()
+        if len(self._limit) == 0 or a._name in self._limit:
+            if self._verbose:
+                print "Calling the task %s.%s" % (a._name, self._name)
+            self._func(a)
+            a.execute()
+            a.reset()
 
     def __str__(self):
         return "%16s:\t%s" % (self._name, self._doc)
 
-def task(func=None, depends=[]):
+def task(func=None, depends=[], limit=[]):
     if func:
-        t = Task(func, depends)
+        t = Task(func, depends, limit)
     else:
         def t(fn):
-            return Task(fn, depends)
+            return Task(fn, depends, limit)
     return t
 
 if __name__ == "__main__":
