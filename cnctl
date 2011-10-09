@@ -54,16 +54,22 @@ if __name__ == "__main__":
     ## Create the dependency list
     tasks = {}
     taskOrder = []
-    for a in args:
+    for arg in args:
         try:
-            agent, task = a.split('.',1)
+            agent, task = arg.split('.',1)
         except ValueError:
             agent = ""
-            task = a
+            task = arg
         if task in taskList.names:
+            ## Expand the task list for dependencies
             expanded = taskList[task]._depends
-            expanded.append(task)
+            if agent:
+                expanded.append('%s.%s' % (agent, task))
+            else:
+                expanded.append(task)
+
             for task in expanded:
+                # Add each new task
                 try:
                     agent, task = task.split('.',1)
                 except ValueError:
@@ -73,7 +79,6 @@ if __name__ == "__main__":
                     tasks[task] = []
                 else:
                     continue
-
                 if agent in agentList.names:
                     if agentList[agent] not in tasks[task]:
                         tasks[task].append(agentList[agent])

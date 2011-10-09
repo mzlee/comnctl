@@ -82,3 +82,9 @@ Other Stuff
 
 Not sure what else I might add.  This was hacked together in two
 nights so it's going to be very rough.
+
+Feature Requests
+================
+(From myself...)
+
+ * A way to define a group of tasks
