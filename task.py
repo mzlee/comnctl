@@ -32,15 +32,25 @@ taskList = TaskList()
 
 class Task(object):
     """A command and control task"""
-    def __init__(self, func, depends=[], limit=[]):
+    background = property(lambda klass: klass._background)
+    depends = property(lambda klass: klass._depends)
+    def __init__(self, func, depends, limit, background):
         global taskList
         self._verbose = False
         self._func = func
         self._name = func.__name__
         self._doc = func.__doc__
         taskList.add(self)
-        self._depends = depends
+        self._depends = []
+        for d in depends:
+            try:
+                a = ''
+                a,t = d.split('.')
+            except ValueError:
+                t = d
+            self._depends.append((a,t))
         self._limit = limit
+        self._background = background
 
     def __call__(self, a):
         if len(self._limit) == 0 or a._name in self._limit:
@@ -48,19 +58,18 @@ class Task(object):
                 print "Calling the task %s.%s" % (a._name, self._name)
             self._func(a)
             a.execute()
-            a.reset()
 
     def __str__(self):
         return "%16s:\t%s" % (self._name, self._doc)
 
-def task(func=None, depends=[], limit=[]):
+def task(func=None, depends=[], limit=[], background=False):
     if func:
-        t = Task(func, depends, limit)
+        t = Task(func, depends, limit, background)
     else:
         def t(fn):
-            return Task(fn, depends, limit)
+            return Task(fn, depends, limit, background)
     return t
 
 if __name__ == "__main__":
-    ## Unit Tests
+    # Unit Tests
     pass

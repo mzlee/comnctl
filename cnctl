@@ -6,6 +6,69 @@ from comnctl import task, taskList, agentList
 
 DRYRUN = False
 
+def parseTasks(tasks):
+    t_dict = {}
+    t_order = []
+    for task in tasks:
+        try:
+            agent = ""
+            agent, task = task.split('.',1)
+        except ValueError:
+            pass
+
+        if task in taskList.names:
+            # Expand the task list for dependencies
+            expanded = taskList[task].depends
+            expanded.append((agent, task))
+
+            for agent, task in expanded:
+                # Add each new task
+                if task not in t_order:
+                    t_order.append(task)
+                    t_dict[task] = []
+                else:
+                    continue
+                if agent in agentList.names:
+                    if agentList[agent] not in t_dict[task]:
+                        t_dict[task].append(agentList[agent])
+                elif len(agent) == 0:
+                    for a in agentList:
+                        if a.__type__() == "Agent":
+                            if a not in t_dict[task]:
+                                t_dict[task].append(a)
+                else:
+                    print "cnctl Error: Unknown agent %s" % str(agent)
+                    usage()
+                    sys.exit(-1)
+        else:
+            print "cnctl Error: Unknown task: %s" % task
+            usage()
+            sys.exit(-1)
+    return t_dict, t_order
+
+def runTasks(tasks, order):
+    procs = []
+    for task in order:
+        for agent in tasks[task]:
+            if agent.__type__() == "Agent":
+                call(task, agent)
+            else:
+                for a in agent._dict.values():
+                    call(task, a)
+        for agent in tasks[task]:
+            if taskList[task].background:
+                if agent.__type__() == "Agent":
+                    procs.append(agent.connection)
+                    agent.reset()
+                else:
+                    for a in agent._dict.values():
+                        procs.append(a.connection)
+                        a.reset()
+            else:
+                agent.flush()
+                agent.connection = None
+    return procs
+
 def usage():
     # Print all of the options
     print "%s [agent].task" % os.path.basename(sys.argv[0])
@@ -19,9 +82,10 @@ def usage():
 
 def call(taskName, agent):
     taskList[taskName](agent)
+    agent.end()
 
 if __name__ == "__main__":
-    ## Look for arguments
+    # Look for arguments
     if os.path.isdir('cnctl'):
         # How do I import the directory?
         sys.path.append('.')
@@ -41,81 +105,27 @@ if __name__ == "__main__":
         usage()
         sys.exit(0)
 
-    ## Parse the input
+    # Parse the input
     (opts, args) = getopt(sys.argv[1:], "h", ['help', 'dryrun'])
     for o, a in opts:
         if o in ['-h', '--help']:
             usage()
             sys.exit(0)
         elif o in ['--dryrun']:
-            # Set dryrun
+            # Set dryrun - Currently not implemented
             DRYRUN = True
 
-    ## Create the dependency list
-    tasks = {}
-    taskOrder = []
-    for arg in args:
-        try:
-            agent, task = arg.split('.',1)
-        except ValueError:
-            agent = ""
-            task = arg
-        if task in taskList.names:
-            ## Expand the task list for dependencies
-            expanded = taskList[task]._depends
-            if agent:
-                expanded.append('%s.%s' % (agent, task))
-            else:
-                expanded.append(task)
-
-            for task in expanded:
-                # Add each new task
-                try:
-                    agent, task = task.split('.',1)
-                except ValueError:
-                    pass
-                if task not in taskOrder:
-                    taskOrder.append(task)
-                    tasks[task] = []
-                else:
-                    continue
-                if agent in agentList.names:
-                    if agentList[agent] not in tasks[task]:
-                        tasks[task].append(agentList[agent])
-                elif len(agent) == 0:
-                    for a in agentList:
-                        if a.__type__() == "Agent":
-                            if a not in tasks[task]:
-                                tasks[task].append(a)
-                else:
-                    print "cnctl Error: Unknown agent %s" % str(agent)
-                    usage()
-                    sys.exit(-1)
-        else:
-            print "cnctl Error: Unknown task: %s" % task
-            usage()
-            sys.exit(-1)
-
-    for task in taskOrder:
-        for agent in tasks[task]:
-            if agent.__type__() == "Agent":
-                call(task, agent)
-            else:
-                ## Need to drill down
-                for a in agent._dict.values():
-                    call(task, a)
-        for agent in tasks[task]:
-            if not agent or not agent.connection:
-                continue
-            for conn in agent.connection:
-                conn.stdin.write('exit\n\0');
-                conn.stdin.flush()
-                for line in conn.stdout.readlines():
-                    agent.out(line.rstrip())
-                err = ""
-                for line in conn.stderr.readline():
-                    if line == '\n':
-                        agent.err(err)
-                    else:
-                        err += line
-            agent.connection = None
+    # Create the dependency list
+    tasks, order = parseTasks(args)
+    waiting = runTasks(tasks, order)
+    while len(waiting):
+        output = [conn.stdout for conn in waiting]
+        errput = [conn.stderr for conn in waiting]
+        data, nothing, error = select(output, [], errput, 100000)
+        for fd in data:
+            for line in fd.readlines():
+                conn.agent.out(line.rstrip())
+        finished = filter(lambda conn: conn.returncode != None, waiting)
+        waiting = filter(lambda conn: conn.returncode == None, waiting)
+        for conn in finished:
+            print finished.returncode

@@ -63,7 +63,7 @@ class BaseAgent(object):
         """Reset the state"""
         self._cmds = []
         self._buffered = []
-        self.executed = False
+        self.connection = None
 
     def inp(self, data):
         sys.stdout.write("%-8s >>> %s\n" % (self.name, data))
@@ -74,18 +74,35 @@ class BaseAgent(object):
     def err(self, data):
         sys.stdout.write("%-8s !!! %s\n" % (self.name, data))
 
+    def ret(self, data):
+        sys.stdout.write("%-8s ??? %d\n" % (self.name, data))
+
     def shell(self, command):
         if not self.connection:
-            connection = self.connect()
-            if type(connection) != list:
-                self.connection = [connection]
-            else:
-                self.connection = connection
+            self.connection = self.connect()
         self.inp(command)
-        for conn in self.connection:
-            if not self._dryrun:
-                conn.stdin.write(command)
-                conn.stdin.write('\n')
+        if not self._dryrun:
+            self.connection.stdin.write(command)
+            self.connection.stdin.write('\n')
+            self.connection.stdin.flush()
+
+    def end(self):
+        if self.connection:
+            self.connection.stdin.write('exit')
+            self.connection.stdin.write('\n')
+            self.connection.stdin.flush()
+
+    def flush(self):
+        if self.connection:
+            err = ""
+            for line in self.connection.stdout.readlines():
+                self.out(line.rstrip())
+            for line in self.connection.stderr.readline():
+                if line == '\n':
+                    self.err(err)
+                else:
+                    err += line
+            self.ret(self.connection.poll())
 
     def connect(self):
         raise NoMethod("BaseAgent does not define connect")
@@ -105,6 +122,7 @@ class RemoteAgent(BaseAgent):
         conn = Popen(["ssh", self._host, "-p", self._port, "-l", self._user],
                      stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True)
         conn.name = self._name
+        conn.agent = self
         return conn
 
     def setId(self, id):
@@ -116,8 +134,10 @@ class RemoteAgent(BaseAgent):
 class LocalAgent(BaseAgent):
     """A local agent for doing some task locally"""
     def connect(self):
-        conn = Popen(["/bin/sh"], stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True)
+        conn = Popen(["/bin/sh"], stdin=PIPE, stdout=PIPE, stderr=PIPE,
+                     close_fds=True)
         conn.name = self._name
+        conn.agent = self
         return conn
 
 class Agents(BaseAgent):
@@ -127,6 +147,7 @@ class Agents(BaseAgent):
         BaseAgent.__init__(self, *args, **kwargs)
         self._list = []
         self._dict = {}
+        self.connList = []
 
     def add(self, a):
         if a._name not in self._list:
@@ -139,8 +160,17 @@ class Agents(BaseAgent):
             self._list.remove(a._name)
     
     def connect(self):
-        conn = [a.connect() for a in self._dict.values()]
-        return conn
+        self.connList = [a.connect() for a in self._dict.values()]
+        self.connList.agent = self
+        return self.connList
+
+    def end(self):
+        for conn in self.connList:
+            conn.end()
+
+    def flush(self):
+        for conn in self.connList:
+            conn.flush()
 
     def __type__(self):
         return "Agents"
