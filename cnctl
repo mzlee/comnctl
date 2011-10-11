@@ -2,6 +2,7 @@
 import os
 import sys
 from getopt import getopt
+from signal import signal, SIGPIPE
 from comnctl import task, taskList, agentList
 
 DRYRUN = False
@@ -56,17 +57,18 @@ def runTasks(tasks, order):
                 for a in agent._dict.values():
                     call(task, a)
         for agent in tasks[task]:
-            if taskList[task].background:
-                if agent.__type__() == "Agent":
+            if agent.__type__() == "Agent":
+                if taskList[task].background:
                     procs.append(agent.connection)
-                    agent.reset()
                 else:
-                    for a in agent._dict.values():
-                        procs.append(a.connection)
-                        a.reset()
+                    agent.flush()
+                agent.reset()
             else:
-                agent.flush()
-                agent.connection = None
+                for a in agent._dict.values():
+                    if taskList[task].background:
+                        procs.append(a.connection)
+                    else:
+                        a.flush()
     return procs
 
 def usage():
@@ -74,7 +76,8 @@ def usage():
     print "%s [agent].task" % os.path.basename(sys.argv[0])
     print "Agents:"
     for a in agentList:
-        print str(a)
+        if len(a._desc):
+            print str(a)
     print ""
     print "Tasks:"
     for t in taskList:
@@ -83,6 +86,11 @@ def usage():
 def call(taskName, agent):
     taskList[taskName](agent)
     agent.end()
+
+def handler(signum, frame):
+    ## Not sure about this yet
+    print 'Signal:', signum
+    print frame
 
 if __name__ == "__main__":
     # Look for arguments
@@ -100,6 +108,8 @@ if __name__ == "__main__":
 
     if 'setup' in taskList.names:
         call('setup', local)
+
+    signal(SIGPIPE, handler)
 
     if len(sys.argv) == 1:
         usage()

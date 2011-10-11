@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import os
 import sys
 from subprocess import Popen, PIPE
 
@@ -35,6 +36,7 @@ class BaseAgent(object):
     _desc = ""
     name = property(lambda klass: klass._name)
     desc = property(lambda klass: klass._desc)
+    attrs = property(lambda klass: [("<(%s)>" % key, str(klass.__getattribute__(key))) for key in klass.key_words])
 
     def __init__(self, name, desc="", dryrun=False):
         global agentList
@@ -45,6 +47,7 @@ class BaseAgent(object):
         self._dryrun = dryrun
         agentList.add(self)
         self.connection = None
+        self.key_words = ['name', 'desc', 'start_path', 'id']
         self.reset()
 
     def __call__(self, t):
@@ -79,7 +82,10 @@ class BaseAgent(object):
 
     def shell(self, command):
         if not self.connection:
-            self.connection = self.connect()
+            self.connect()
+        if "<(" in command and ")>" in command:
+            for k, v in self.attrs:
+                command = command.replace(k,v)
         self.inp(command)
         if not self._dryrun:
             self.connection.stdin.write(command)
@@ -104,6 +110,9 @@ class BaseAgent(object):
                     err += line
             self.ret(self.connection.poll())
 
+    def flatten(self):
+        return [self.connection]
+
     def connect(self):
         raise NoMethod("BaseAgent does not define connect")
 
@@ -112,18 +121,24 @@ class BaseAgent(object):
 
 class RemoteAgent(BaseAgent):
     """A remote agent for doing some task over ssh"""
+    host = property(lambda klass: klass._host)
+    port = property(lambda klass: klass._port)
+    user = property(lambda klass: klass._user)
+    local = property(lambda klass: klass._local)
     def __init__(self, name, user, host, port=22, desc=""):
         BaseAgent.__init__(self, name, desc)
         self._host = host
         self._port = str(port)
         self._user = user
+        self._local = os.uname()[1]
+        self.key_words.extend(['host', 'port', 'user', 'local'])
 
     def connect(self):
         conn = Popen(["ssh", self._host, "-p", self._port, "-l", self._user],
                      stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True)
         conn.name = self._name
         conn.agent = self
-        return conn
+        self.connection = conn
 
     def setId(self, id):
         self.id = id
@@ -138,39 +153,51 @@ class LocalAgent(BaseAgent):
                      close_fds=True)
         conn.name = self._name
         conn.agent = self
-        return conn
+        self.connection = conn
 
 class Agents(BaseAgent):
     """A group of agents"""
 
-    def __init__(self, *args, **kwargs):
-        BaseAgent.__init__(self, *args, **kwargs)
+    def __init__(self, name, desc="", dryrun=False, *args, **kwargs):
+        BaseAgent.__init__(self, name, desc)
         self._list = []
         self._dict = {}
-        self.connList = []
+
+    def reset(self):
+        """Reset the state"""
+        self.connection = []
 
     def add(self, a):
         if a._name not in self._list:
             self._list.append(a._name)
             self._dict[a._name] = a
 
-    def remove(self, a):
-        if a._name in self._list:
-            del self._dict[a._name]
-            self._list.remove(a._name)
-    
+    def flatten(self):
+        conn = [a.flatten() for a in self._dict.values()]
+        self.connection = []
+        for c in conn:
+            self.connection.extend(c)
+        return self.connection
+
     def connect(self):
-        self.connList = [a.connect() for a in self._dict.values()]
-        self.connList.agent = self
-        return self.connList
+        for a in self._dict.values():
+            a.connect()
+        self.connection = self.flatten()
+
+    def shell(self, command):
+        if not self.connection:
+            self.connect()
+        if not self._dryrun:
+            for conn in self.connection:
+                conn.agent.shell(command)
 
     def end(self):
-        for conn in self.connList:
-            conn.end()
+        for conn in self.connection:
+            conn.agent.end()
 
     def flush(self):
-        for conn in self.connList:
-            conn.flush()
+        for conn in self.connection:
+            conn.agent.flush()
 
     def __type__(self):
         return "Agents"
@@ -188,9 +215,8 @@ local = LocalAgent('local', "the localhost")
 def remote(name, user, host, port=22, desc=""):
     return RemoteAgent(name, user, host, port=port, desc=desc)
 
-def group(name, agents=[local]):
-    g = Agents(name)
+def group(name, agents=[], desc="", dryrun=False):
+    g = Agents(name, desc=desc, dryrun=dryrun)
     for a in agents:
         g.add(a)
     return g
-
