@@ -80,6 +80,13 @@ class BaseAgent(object):
     def ret(self, data):
         sys.stdout.write("%-8s ??? %d\n" % (self.name, data))
 
+    def serialize(self, commandList):
+        for cmd, args in commandList:
+            cmd(*args)
+        self.end()
+        self.flush()
+        self.reset()
+
     def shell(self, command):
         if not self.connection:
             self.connect()
