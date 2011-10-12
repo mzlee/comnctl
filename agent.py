@@ -125,17 +125,20 @@ class RemoteAgent(BaseAgent):
     port = property(lambda klass: klass._port)
     user = property(lambda klass: klass._user)
     local = property(lambda klass: klass._local)
-    def __init__(self, name, user, host, port=22, desc=""):
+    def __init__(self, name, user, host, port=22, flags=[], desc=""):
         BaseAgent.__init__(self, name, desc)
         self._host = host
         self._port = str(port)
         self._user = user
         self._local = os.uname()[1]
+        self._flags = flags
         self.key_words.extend(['host', 'port', 'user', 'local'])
 
     def connect(self):
-        conn = Popen(["ssh", self._host, "-p", self._port, "-l", self._user],
-                     stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True)
+        cmd = ['ssh']
+        cmd.extend(self._flags)
+        cmd.extend([self._host, "-p", self._port, "-l", self._user])
+        conn = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True)
         conn.name = self._name
         conn.agent = self
         self.connection = conn
@@ -212,8 +215,8 @@ class Agents(BaseAgent):
 
 local = LocalAgent('local', "the localhost")
 
-def remote(name, user, host, port=22, desc=""):
-    return RemoteAgent(name, user, host, port=port, desc=desc)
+def remote(name, user, host, port=22, flags=[], desc=""):
+    return RemoteAgent(name, user, host, port=port, flags=flags, desc=desc)
 
 def group(name, agents=[], desc="", dryrun=False):
     g = Agents(name, desc=desc, dryrun=dryrun)
