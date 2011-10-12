@@ -4,6 +4,7 @@ import sys
 from getopt import getopt
 from signal import signal, SIGPIPE
 from comnctl import task, taskList, agentList
+from select import select
 
 DRYRUN = False
 
