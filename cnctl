@@ -54,21 +54,24 @@ def runTasks(tasks, order):
             if agent.__type__() == "Agent":
                 call(task, agent)
             else:
-                for a in agent._dict.values():
-                    call(task, a)
+                for a in agent._list:
+                    call(task, agentList[a])
         for agent in tasks[task]:
             if agent.__type__() == "Agent":
-                if taskList[task].background:
-                    procs.append(agent.connection)
-                else:
-                    agent.flush()
+                if agent.connection:
+                    if taskList[task].background:
+                        procs.append(agent.connection)
+                    else:
+                        agent.flush()
                 agent.reset()
             else:
-                for a in agent._dict.values():
-                    if taskList[task].background:
-                        procs.append(a.connection)
-                    else:
-                        a.flush()
+                for a in agent._list:
+                    if agentList[a].connection:
+                        if taskList[task].background:
+                            procs.append(agentList[a].connection)
+                        else:
+                            agentList[a].flush()
+                    agentList[a].reset()
     return procs
 
 def usage():
@@ -85,12 +88,12 @@ def usage():
 
 def call(taskName, agent):
     taskList[taskName](agent)
-    agent.end()
+    if not taskList[taskName].background:
+        agent.end()
 
 def handler(signum, frame):
-    ## Not sure about this yet
+    # Not sure about this yet
     print 'Signal:', signum
-    print frame
 
 if __name__ == "__main__":
     # Look for arguments
@@ -131,11 +134,16 @@ if __name__ == "__main__":
     while len(waiting):
         output = [conn.stdout for conn in waiting]
         errput = [conn.stderr for conn in waiting]
-        data, nothing, error = select(output, [], errput, 100000)
+        data, nothing, error = select(output, [], errput, 100)
         for fd in data:
             for line in fd.readlines():
                 conn.agent.out(line.rstrip())
+        for fd in error:
+            for line in fd.readlines():
+                conn.agent.err(line.rstrip())
         finished = filter(lambda conn: conn.returncode != None, waiting)
         waiting = filter(lambda conn: conn.returncode == None, waiting)
+        for conn in waiting:
+            conn.poll()
         for conn in finished:
-            print finished.returncode
+            conn.agent.ret(conn.returncode)
