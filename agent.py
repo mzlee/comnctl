@@ -80,20 +80,22 @@ class BaseAgent(object):
     def ret(self, data):
         sys.stdout.write("%-8s ??? %d\n" % (self.name, data))
 
-    def serialize(self, commandList):
+    def serialize(self, commandList, quiet=False):
         for cmd, args in commandList:
-            cmd(*args)
+            cmd(*args, quiet=quiet)
         self.end()
-        self.flush()
+        ret = self.flush(quiet)
         self.reset()
+        return ret
 
-    def shell(self, command):
+    def shell(self, command, quiet=False):
         if not self.connection:
             self.connect()
         if "<(" in command and ")>" in command:
             for k, v in self.attrs:
                 command = command.replace(k,v)
-        self.inp(command)
+        if not quiet:
+            self.inp(command)
         if not self._dryrun:
             self.connection.stdin.write(command)
             self.connection.stdin.write('\n')
@@ -105,17 +107,22 @@ class BaseAgent(object):
             self.connection.stdin.write('\n')
             self.connection.stdin.flush()
 
-    def flush(self):
+    def flush(self, quiet=False):
         if self.connection:
             err = ""
             for line in self.connection.stdout.readlines():
-                self.out(line.rstrip())
+                if not quiet:
+                    self.out(line.rstrip())
             for line in self.connection.stderr.readline():
                 if line == '\n':
-                    self.err(err)
+                    if not quiet:
+                        self.err(err)
                 else:
                     err += line
-            self.ret(self.connection.poll())
+            ret = self.connection.poll()
+            if not quiet:
+                self.ret(ret)
+        return ret
 
     def flatten(self):
         return [self.connection]
