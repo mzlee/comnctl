@@ -62,30 +62,34 @@ class BaseAgent(object):
     def __iter__(self):
         yield self
 
-    def reset(self):
+    def reset(self, quiet=False):
         """Reset the state"""
         self._cmds = []
         self._buffered = []
         self.connection = None
 
-    def inp(self, data):
-        sys.stdout.write("%-8s >>> %s\n" % (self.name, data))
+    def inp(self, data, quiet=False):
+        if not quiet:
+            sys.stdout.write("%-8s >>> %s\n" % (self.name, data))
 
-    def out(self, data):
-        sys.stdout.write("%-8s <<< %s\n" % (self.name, data))
+    def out(self, data, quiet=False):
+        if not quiet:
+            sys.stdout.write("%-8s <<< %s\n" % (self.name, data))
 
-    def err(self, data):
-        sys.stdout.write("%-8s !!! %s\n" % (self.name, data))
+    def err(self, data, quiet=False):
+        if not quiet:
+            sys.stdout.write("%-8s !!! %s\n" % (self.name, data))
 
-    def ret(self, data):
-        sys.stdout.write("%-8s ??? %d\n" % (self.name, data))
+    def ret(self, data, quiet=False):
+        if not quiet:
+            sys.stdout.write("%-8s ??? %d\n" % (self.name, data))
 
     def serialize(self, commandList, quiet=False):
         for cmd, args in commandList:
             cmd(*args, quiet=quiet)
-        self.end()
-        ret = self.flush(quiet)
-        self.reset()
+        self.end(quiet=quiet)
+        ret = self.flush(quiet=quiet)
+        self.reset(quiet=quiet)
         return ret
 
     def shell(self, command, quiet=False):
@@ -94,14 +98,13 @@ class BaseAgent(object):
         if "<(" in command and ")>" in command:
             for k, v in self.attrs:
                 command = command.replace(k,v)
-        if not quiet:
-            self.inp(command)
+        self.inp(command, quiet=quiet)
         if not self._dryrun:
             self.connection.stdin.write(command)
             self.connection.stdin.write('\n')
             self.connection.stdin.flush()
 
-    def end(self):
+    def end(self, quiet=False):
         if self.connection:
             self.connection.stdin.write('exit')
             self.connection.stdin.write('\n')
@@ -111,17 +114,14 @@ class BaseAgent(object):
         if self.connection:
             err = ""
             for line in self.connection.stdout.readlines():
-                if not quiet:
-                    self.out(line.rstrip())
+                self.out(line.rstrip(), quiet=quiet)
             for line in self.connection.stderr.readline():
                 if line == '\n':
-                    if not quiet:
-                        self.err(err)
+                    self.err(err, quiet=quiet)
                 else:
                     err += line
             ret = self.connection.poll()
-            if not quiet:
-                self.ret(ret)
+            self.ret(ret, quiet=quiet)
         return ret
 
     def flatten(self):
@@ -129,9 +129,6 @@ class BaseAgent(object):
 
     def connect(self):
         raise NoMethod("BaseAgent does not define connect")
-
-    def execute(self):
-        pass
 
 class RemoteAgent(BaseAgent):
     """A remote agent for doing some task over ssh"""
@@ -201,20 +198,20 @@ class Agents(BaseAgent):
             a.connect()
         self.connection = self.flatten()
 
-    def shell(self, command):
+    def shell(self, command, quiet=False):
         if not self.connection:
             self.connect()
         if not self._dryrun:
             for conn in self.connection:
-                conn.agent.shell(command)
+                conn.agent.shell(command, quiet=quiet)
 
-    def end(self):
+    def end(self, quiet=False):
         for conn in self.connection:
-            conn.agent.end()
+            conn.agent.end(quiet)
 
-    def flush(self):
+    def flush(self, quiet=False):
         for conn in self.connection:
-            conn.agent.flush()
+            conn.agent.flush(quiet)
 
     def __type__(self):
         return "Agents"

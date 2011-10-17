@@ -57,7 +57,6 @@ class Task(object):
             if self._verbose:
                 print "Calling the task %s.%s" % (a._name, self._name)
             self._func(a)
-            a.execute()
 
     def __str__(self):
         return "%16s:\t%s" % (self._name, self._doc)
