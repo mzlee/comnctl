@@ -53,7 +53,11 @@ class Task(object):
         self._background = background
 
     def __call__(self, a):
-        if len(self._limit) == 0 or a._name in self._limit:
+        names = []
+        for l in self._limit:
+            if l in agentList.keys():
+                names.extend(agentList[l])
+        if len(names) == 0 or a in names:
             if self._verbose:
                 print "Calling the task %s.%s" % (a._name, self._name)
             self._func(a)
